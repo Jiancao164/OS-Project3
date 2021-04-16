@@ -229,19 +229,19 @@ int fs_getattr(const char *path, struct stat *sb)
 //    struct fs_dirent *temp = malloc(sizeof (struct fs_dirent));
 //
 //
-    sb = malloc(sizeof(struct stat));
+    //sb = malloc(sizeof(struct stat));
     sb->st_nlink = 1;
     sb->st_uid = attr.uid;
     sb->st_gid = attr.gid;
 
     sb->st_atime = attr.mtime;
     sb->st_mtime = attr.mtime;
-    sb->st_ctime = attr.mtime;
+    sb->st_ctime = attr.ctime;
     sb->st_mode = attr.mode;
 
     sb->st_size = attr.size;
    // sb->
-    printf("mode is %d this one\n", sb->st_uid);
+    printf("mode is %li this one\n", sb->st_mtim.tv_sec);
     return 0;
 }
 

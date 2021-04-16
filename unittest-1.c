@@ -65,17 +65,19 @@ START_TEST(fs_getattr_test)
 {
 
     ck_assert_int_eq(1, 1);
-    struct stat sb;
+    struct stat *sb = malloc(sizeof(const struct stat));
     for (int i = 0; i < 15; i++) {
-        fs_ops.getattr(table_2[i].path, &sb);
-        printf("%d, %d\n", (int)sb.st_mode, table_2[i].mode);
-        //ck_assert_int_eq(sb.st_mode, table_2[i].mode);
-        ck_assert_uint_eq(sb.st_uid, table_2[i].uid);
-        ck_assert_int_eq(sb.st_uid, table_2[i].uid);
-        ck_assert_int_eq(sb.st_gid, table_2[i].gid);
-        ck_assert_int_eq(sb.st_size, table_2[i].size);
-        ck_assert_int_eq(sb.st_ctime, table_2[i].mtime);
-        ck_assert_int_eq(sb.st_mtime, table_2[i].ctime);
+        printf("%d add res is \n", sb->st_size);
+        fs_ops.getattr(table_2[i].path, sb);
+
+//        printf("%ld, %d\n", sb.st_size, table_2[i].mode);
+        ck_assert_int_eq(sb->st_mode, table_2[i].mode);
+        ck_assert_uint_eq(sb->st_uid, table_2[i].uid);
+        ck_assert_int_eq(sb->st_uid, table_2[i].uid);
+        ck_assert_int_eq(sb->st_gid, table_2[i].gid);
+        ck_assert_int_eq(sb->st_size, table_2[i].size);
+        ck_assert_int_eq(sb->st_ctime, table_2[i].ctime);
+        ck_assert_int_eq(sb->st_mtime, table_2[i].mtime);
     }
 
 
