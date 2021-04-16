@@ -74,7 +74,7 @@ void* fs_init(struct fuse_conn_info *conn)
         fprintf(stderr, "failed.");
         return NULL;
     }
-
+    printf("test case___");
     fread(&super_block, sizeof(struct fs_super), 1, fp);
     fread(bit_map, sizeof(bit_map), 1, fp);
     fread(&root_inode, sizeof(struct fs_inode), 1, fp);
@@ -224,7 +224,7 @@ int fs_getattr(const char *path, struct stat *sb)
     fseek(fp, inum * 4096, SEEK_SET);
     fread(&attr, sizeof(struct fs_inode), 1, fp);
 
-    printf("%d", attr.size);
+    printf("size is %d \n", attr.mode);
 
 //    struct fs_dirent *temp = malloc(sizeof (struct fs_dirent));
 //
@@ -233,13 +233,15 @@ int fs_getattr(const char *path, struct stat *sb)
     sb->st_nlink = 1;
     sb->st_uid = attr.uid;
     sb->st_gid = attr.gid;
+
     sb->st_atime = attr.mtime;
     sb->st_mtime = attr.mtime;
     sb->st_ctime = attr.mtime;
     sb->st_mode = attr.mode;
+
     sb->st_size = attr.size;
    // sb->
-
+    printf("mode is %d this one\n", sb->st_uid);
     return 0;
 }
 
