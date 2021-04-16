@@ -1,0 +1,1 @@
+/usr/bin/cc -g CMakeFiles/Project3.dir/homework.c.o CMakeFiles/Project3.dir/hw3fuse.c.o CMakeFiles/Project3.dir/misc.c.o CMakeFiles/Project3.dir/unittest-1.c.o CMakeFiles/Project3.dir/unittest-2.c.o CMakeFiles/Project3.dir/test1.c.o -o Project3 
