@@ -40,6 +40,7 @@ names = dict()
 names[2] = ''
 
 def iter(name, inum, v):
+
     assert inum < nblks
     children = []
     inodes[inum] = 1

@@ -15,6 +15,8 @@
 #include <stdlib.h>
 #include <errno.h>
 
+extern struct fuse_operations fs_ops;
+extern void block_init(char *file);
 /* mockup for fuse_get_context. you can change ctx.uid, ctx.gid in 
  * tests if you want to test setting UIDs in mknod/mkdir
  */
@@ -28,7 +30,67 @@ struct fuse_context *fuse_get_context(void)
 START_TEST(a_test)
 {
     ck_assert_int_eq(1, 1);
+
 }
+END_TEST
+
+START_TEST(fs_create_test)
+    {
+        fs_ops.create("/file1.0", 0100777, NULL);
+        struct stat st;
+        fs_ops.getattr("/file1.0", &st);
+        ck_assert_int_eq(st.st_mode, 0100777);
+
+        fs_ops.create("/dir1/file2.0", 0100777, NULL);
+        struct stat st1;
+        fs_ops.getattr("/dir1/file2.0", &st1);
+        ck_assert_int_eq(st1.st_mode, 0100777);
+
+        fs_ops.create("/dir1/dir2/file3.0", 0100777, NULL);
+        struct stat st3;
+        fs_ops.getattr("/dir1/dir2/file3.0", &st3);
+        ck_assert_int_eq(st1.st_mode, 0100777);
+
+        ck_assert_int_eq(fs_ops.create("/dir1/dir3/file4.0", 0100777, NULL), -ENOENT);
+        ck_assert_int_eq(fs_ops.create("/file1.0/file4.0", 0100777, NULL), -ENOENT);
+        ck_assert_int_eq(fs_ops.create("/file1.0", 0100777, NULL), -EEXIST);
+
+
+    }
+END_TEST
+
+START_TEST(fs_mkdir_test)
+    {
+        fs_ops.mkdir("/dir1", 0777);
+        struct stat st;
+        fs_ops.getattr("/dir1", &st);
+        ck_assert_int_eq(st.st_mode, 040777);
+
+        fs_ops.mkdir("/dir1/dir2", 0777);
+        struct stat st1;
+        fs_ops.getattr("/dir1/dir2", &st1);
+        ck_assert_int_eq(st1.st_mode, 040777);
+
+    }
+END_TEST
+
+START_TEST(fs_rmdir_test)
+    {
+        fs_ops.rmdir("/dir2");
+
+        struct stat st;
+        ck_assert_int_lt(fs_ops.getattr("/dir2", &st), 0);
+
+    }
+END_TEST
+
+START_TEST(fs_unlink_test)
+    {
+        fs_ops.unlink("/file1.0");
+        struct stat st;
+        ck_assert_int_lt(fs_ops.getattr("/file1.0", &st), 0);
+
+    }
 END_TEST
 
 /* this is an example of a callback function for readdir
@@ -50,19 +112,26 @@ int empty_filler(void *ptr, const char *name, const struct stat *stbuf,
  *  fs_ops.statfs(path, struct statvfs *sv);
  */
 
-extern struct fuse_operations fs_ops;
-extern void block_init(char *file);
+
 
 int main(int argc, char **argv)
 {
     block_init("test2.img");
     fs_ops.init(NULL);
+
+
     
     Suite *s = suite_create("fs5600");
     TCase *tc = tcase_create("write_mostly");
 
     tcase_add_test(tc, a_test); /* see START_TEST above */
     /* add more tests here */
+    //tcase_add_test(tc, fs_mkdir_test);
+    tcase_add_test(tc, fs_create_test);
+
+//    tcase_add_test(tc, fs_rmdir_test);
+
+   // tcase_add_test(tc, fs_unlink_test);
 
     suite_add_tcase(s, tc);
     SRunner *sr = srunner_create(s);

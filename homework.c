@@ -63,23 +63,14 @@ int bit_test(unsigned char *map, int i)
 struct fs_super super_block;
 unsigned char bit_map[4 * 1024];
 struct fs_inode root_inode;
-FILE *fp = NULL;
+static FILE *fp;
 
 void* fs_init(struct fuse_conn_info *conn)
 {
     /* your code here */
-    fp = NULL;
-    fp = fopen("test.img", "r");
-    if (fp == NULL) {
-        fprintf(stderr, "failed.");
-        return NULL;
-    }
-
-    fread(&super_block, sizeof(struct fs_super), 1, fp);
-    fread(bit_map, sizeof(bit_map), 1, fp);
-    fread(&root_inode, sizeof(struct fs_inode), 1, fp);
-
-   // fclose(fp);
+    block_read(&super_block, 0, 1);
+    block_read(bit_map, 1, 1);
+    block_read(&root_inode, 2, 1);
     return NULL;
 }
 
@@ -106,19 +97,7 @@ void* fs_init(struct fuse_conn_info *conn)
  */
 
 
-/* getattr - get file or directory attributes. For a description of
- *  the fields in 'struct stat', see 'man lstat'.
- *
- * Note - for several fields in 'struct stat' there is no corresponding
- *  information in our file system:
- *    st_nlink - always set it to 1
- *    st_atime, st_ctime - set to same value as st_mtime
- *
- * success - return 0
- * errors - path translation, ENOENT
- * hint - factor out inode-to-struct stat conversion - you'll use it
- *        again in readdir
- */
+
 #define MAX_PATH_LEN 10
 #define MAX_NAME_LEN 27
 int pathc;
@@ -144,22 +123,16 @@ int parse(const char *path, char **argv)
 
 
 int translate(int local_pathc, char **local_pathv) {
-    fp = fopen("test.img", "r");
-    if (fp == NULL) {
-        fprintf(stderr, "failed.");
-    }
 
     struct fs_inode current_inode = root_inode;
-    uint32_t inum = 2;
+    int inum = 2;
 
     for (int i = 0; i < local_pathc; i++) {
-        fseek(fp, inum * 4096, SEEK_SET);
-        fread(&current_inode, sizeof(struct fs_inode), 1, fp);
+        block_read(&current_inode, inum, 1);
 
         if (current_inode.mode & S_IFDIR) {
             struct fs_dirent entries[128];
-            fseek(fp, current_inode.ptrs[0] * 4096, SEEK_SET);
-            fread(&entries, sizeof(struct fs_inode), 1, fp);
+            block_read(entries, current_inode.ptrs[0], 1);
 
             for (int j = 0; j < 128; j++) {
                 if (entries[j].valid) {
@@ -178,9 +151,23 @@ int translate(int local_pathc, char **local_pathv) {
         }
     }
 
-    fclose(fp);
+
     return inum;
 }
+
+/* getattr - get file or directory attributes. For a description of
+ *  the fields in 'struct stat', see 'man lstat'.
+ *
+ * Note - for several fields in 'struct stat' there is no corresponding
+ *  information in our file system:
+ *    st_nlink - always set it to 1
+ *    st_atime, st_ctime - set to same value as st_mtime
+ *
+ * success - return 0
+ * errors - path translation, ENOENT
+ * hint - factor out inode-to-struct stat conversion - you'll use it
+ *        again in readdir
+ */
 int fs_getattr(const char *path, struct stat *sb)
 {
     /* your code here */
@@ -189,14 +176,9 @@ int fs_getattr(const char *path, struct stat *sb)
 
     int inum = translate(pathc, pathv);
     if (inum < 0) return inum;
-    fp = fopen("test.img", "r");
-    if (fp == NULL) {
-        fprintf(stderr, "failed.");
-    }
 
     struct fs_inode attr;
-    fseek(fp, inum * 4096, SEEK_SET);
-    fread(&attr, sizeof(struct fs_inode), 1, fp);
+    block_read(&attr, inum, 1);
 
     sb->st_nlink = 1;
     sb->st_uid = attr.uid;
@@ -231,21 +213,11 @@ int fs_readdir(const char *path, void *ptr, fuse_fill_dir_t filler,
     parse(path, pathv);
     int inum = translate(pathc, pathv);
     if (inum < 0) return inum;
-    fp = fopen("test.img", "r");
-    if (fp == NULL) {
-        fprintf(stderr, "failed.");
-        return -1;
-    }
+
     struct fs_inode current_inode;
-
-    fseek(fp, inum * 4096, SEEK_SET);
-    fread(&current_inode, sizeof(struct  fs_inode), 1, fp);
-
+    block_read(&current_inode, inum, 1);
     struct fs_dirent entries[128];
-
-    fseek(fp, current_inode.ptrs[0] * 4096, SEEK_SET);
-    fread(entries, sizeof(struct fs_inode), 1, fp);
-
+    block_read(entries, current_inode.ptrs[0], 1);
 
     for (int i = 0; i < 128; i++) {
         if (entries[i].valid) {
@@ -273,33 +245,21 @@ int fs_readdir(const char *path, void *ptr, fuse_fill_dir_t filler,
 int fs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
 {
     /* your code here */
-
     *pathv = NULL;
     parse(path, pathv);
-
     int inum = translate(pathc, pathv);
-
-    if (inum > 0) return EEXIST;
-
+    if (inum > 0) return inum;
+    printf("now is %d", inum);
     inum = translate(pathc - 1, pathv);
-    if (inum < 0) return EEXIST;
-
-    fp = fopen("test.img", "r+");
-    if (fp == NULL) {
-        fprintf(stderr, "failed.");
-        return -1;
-    }
+    if (inum < 0) return inum;
 
     struct fs_inode current_inode;
+    block_read(&current_inode, inum, 1);
+    if (current_inode.mode & 0100000) return -ENOENT;
 
-    fseek(fp, inum * 4096, SEEK_SET);
-    fread(&current_inode, sizeof(struct  fs_inode), 1, fp);
+    struct fs_dirent *entries = malloc(4096);
+    block_read(entries, current_inode.ptrs[0], 1);
 
-
-    struct fs_dirent entries[128];;
-
-    fseek(fp, current_inode.ptrs[0] * 4096, SEEK_SET);
-    fread(entries, sizeof(struct fs_inode), 1, fp);
     int count_valid = 0;
     long empty_idx = -1;
     for (int i = 0; i < 128; i++) {
@@ -308,56 +268,44 @@ int fs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
     }
     if (count_valid == 128) return -ENOSPC;
 
-    struct fs_dirent new_dir;
-    new_dir.valid = 1;
-    strncpy(new_dir.name, pathv[pathc - 1], 27);
-    new_dir.name[27] = '\0';
-
+    entries[empty_idx].valid = 1;
+    strncpy(entries[empty_idx].name, pathv[pathc - 1], 27);
     int newInum = -1;
 
     for (int i = 0; i < super_block.disk_size; i++) {
         if (!bit_test(bit_map, i)) {
             newInum = i;
-
             bit_set(bit_map, i);
             break;
         }
-
     }
 
     if (newInum == -1) return -ENOSPC;
+    struct fs_inode *new_inode = malloc(sizeof(struct fs_inode));
 
-    struct fs_inode new_inode;
-
-    fseek(fp, newInum * 4096, SEEK_SET);
-    fread(&new_inode, sizeof(struct  fs_inode), 1, fp);
-
-    new_inode.size = 4096;
-    new_inode.mode = mode;
-    //struct fuse_context *ctx = fuse_get_context();
+    new_inode->size = 4096;
+    new_inode->mode = mode;
     uint16_t uid = 500;
     uint16_t gid = 500;
-
-    new_inode.uid = uid;
-    new_inode.gid = gid;
-
+    new_inode->uid = uid;
+    new_inode->gid = gid;
     uint32_t timestamp = time(NULL);
-    new_inode.ctime = timestamp;
-    new_inode.mtime = timestamp;
+    new_inode->ctime = timestamp;
+    new_inode->mtime = timestamp;
 
-    new_dir.inode = newInum;
+    for (int i = 0; i < 400; i++) {
+        if (bit_test(bit_map, i) == 0) {
+            bit_set(bit_map, i);
+            new_inode->ptrs[0] = i;
+            break;
+        }
+    }
 
-
-
-
-    fseek(fp, empty_idx * sizeof(struct fs_dirent) + current_inode.ptrs[0] * 4096, SEEK_SET);
-    fwrite(&new_dir, sizeof(struct fs_dirent), 1, fp);
-
-    fseek(fp, newInum * 4096, SEEK_SET);
-    fwrite(&new_inode, sizeof(struct fs_inode), 1, fp);
-
-
-    return -EOPNOTSUPP;
+    entries[empty_idx].inode = (uint32_t)newInum;
+    block_write(entries, current_inode.ptrs[0], 1);
+    block_write(bit_map, 1, 1);
+    block_write(new_inode, newInum, 1);
+    return 0;
 }
 
 /* mkdir - create a directory with the given mode.
@@ -377,24 +325,13 @@ int fs_mkdir(const char *path, mode_t mode)
     int inum = translate(pathc, pathv);
     if (inum > 0) return EEXIST;
     inum = translate(pathc - 1, pathv);
-    printf("__");
     if (inum < 0) return EEXIST;
-    printf("__");
-    fp = fopen("test.img", "r+");
-    if (fp == NULL) {
-        fprintf(stderr, "failed.");
-        return -1;
-    }
-    printf("__");
+
     struct fs_inode current_inode;
-
-    fseek(fp, inum * 4096, SEEK_SET);
-    fread(&current_inode, sizeof(struct fs_inode), 1, fp);
-
+    if (current_inode.mode & 0100000) return -ENOENT;
+    block_read(&current_inode, inum, 1);
     struct fs_dirent entries[128];;
-
-    fseek(fp, current_inode.ptrs[0] * 4096, SEEK_SET);
-    fread(entries, sizeof(struct fs_inode), 1, fp);
+    block_read(entries, current_inode.ptrs[0], 1);
 
     int count_valid = 0;
     long empty_idx = -1;
@@ -404,50 +341,32 @@ int fs_mkdir(const char *path, mode_t mode)
     }
     if (count_valid == 128) return -ENOSPC;
 
-    struct fs_dirent new_dir;
-    new_dir.valid = 1;
-    strncpy(new_dir.name, pathv[pathc - 1], 27);
-    new_dir.name[27] = '\0';
-
-
+    entries[empty_idx].valid = 1;
+    strncpy(entries[empty_idx].name, pathv[pathc - 1], 28);
     int newInum = -1;
-
-
     for (int i = 0; i < super_block.disk_size; i++) {
         if (!bit_test(bit_map, i)) {
             newInum = i;
             bit_set(bit_map, i);
             break;
         }
-
     }
-    printf("__sdfds");
+    block_write(bit_map, 1, 1);
     if (newInum == -1) return -ENOSPC;
 
-    struct fs_inode new_inode;
+    struct fs_inode *new_inode = malloc(4096);
 
-//    fseek(fp, newInum * 4096, SEEK_SET);
-//    fread(&new_inode, sizeof(struct  fs_inode), 1, fp);
-
-    new_inode.size = 4096;
-    printf("%d, \n", S_IFDIR | mode);
-    new_inode.mode = S_IFDIR | mode;
-
-    printf("_______________");
+    new_inode->size = 4096;
+    new_inode->mode = 040000 | mode;
     //struct fuse_context *ctx = fuse_get_context();
     uint16_t uid = 500;
     uint16_t gid = 500;
-
-    new_inode.uid = uid;
-    new_inode.gid = gid;
-
+    new_inode->uid = uid;
+    new_inode->gid = gid;
     uint32_t timestamp = time(NULL);
-    new_inode.ctime = timestamp;
-    new_inode.mtime = timestamp;
-    printf("uio%d,\n", newInum);
-    new_dir.inode = newInum;
-
-
+    new_inode->ctime = timestamp;
+    new_inode->mtime = timestamp;
+    entries[empty_idx].inode = newInum;
 
     int new_idx = -1;
     for (int i = 0; i < super_block.disk_size; i++) {
@@ -456,25 +375,17 @@ int fs_mkdir(const char *path, mode_t mode)
             bit_set(bit_map, i);
             break;
         }
-
     }
-    printf("%d,,", bit_test(bit_map, new_idx));
+
     if (new_idx == -1) return -ENOSPC;
-    struct fs_dirent new_entries[128];
+    new_inode->ptrs[0] = new_idx;
+    struct fs_dirent *new_entries = calloc(sizeof(struct fs_dirent) , 128);
 
-    new_inode.ptrs[0] = new_idx * 4096;
-
-    fseek(fp, empty_idx * sizeof(struct fs_dirent) + current_inode.ptrs[0] * 4096, SEEK_SET);
-    fwrite(&new_dir, sizeof(struct fs_dirent), 1, fp);
-
-//    struct fs_inode temp;
-    fseek(fp, newInum * 4096, SEEK_SET);
-    fwrite(&new_inode, sizeof(struct fs_inode), 1, fp);
-
-    fseek(fp, new_idx * 4096, SEEK_SET);
-    fwrite(new_entries, sizeof(struct fs_dirent) * 128, 1, fp);
-
-
+    block_write(entries, current_inode.ptrs[0], 1);
+    block_write(new_inode, newInum, 1);
+    bit_set(bit_map, new_idx);
+    block_write(bit_map, 1, 1);
+    block_write(new_entries, new_idx, 1);
     return 0;
 }
 
@@ -486,68 +397,48 @@ int fs_mkdir(const char *path, mode_t mode)
 int fs_unlink(const char *path)
 {
     /* your code here */
-    printf("_________");
-
     *pathv = NULL;
     parse(path, pathv);
     char file_name[28];
-
     strcpy(file_name, pathv[pathc - 1]);
-
     int inum = translate(pathc, pathv);
     if (inum < 0) return inum;
     int file_inum = inum;
-   // printf("%s is this;;;;", pathv[pathc - 1]);
-
     inum = translate(pathc - 1, pathv);
 
-    printf("%d\n", inum);
-
-    fp = fopen("test.img", "r+");
-    if (fp == NULL) {
-        fprintf(stderr, "failed.");
-        return -1;
-    }
-
     struct fs_inode current_inode;
+    block_read(&current_inode, inum, 1);
+    if (current_inode.mode & 0100000) return -ENOENT;
 
-    fseek(fp, inum * 4096, SEEK_SET);
-    fread(&current_inode, sizeof(struct fs_inode), 1, fp);
+    struct fs_inode *file_node = malloc(4096);
+    block_read(file_node, file_inum, 1);
 
-    struct fs_dirent entries[128];
-
-    fseek(fp, current_inode.ptrs[0] * 4096, SEEK_SET);
-    fread(entries, sizeof(struct fs_inode), 1, fp);
-
-
-    printf("%s \n", entries[0].name);
-    printf("%s\n", file_name);
-
-    int idx = -1;
-    for (int i = 0; i < 128; i++) {
-        if (strcmp(entries[i].name, file_name) == 0) {
-            idx = i;
+    for (int i = 0; i < FS_BLOCK_SIZE/4 - 5; i++) {
+        if (file_node->ptrs[i] != 0) {
+            block_write("", file_node->ptrs[i], 1);
+            bit_clear(bit_map, file_node->ptrs[i]);
         }
     }
 
-    struct fs_dirent empty_direct;
-    fseek(fp, current_inode.ptrs[0] * 4096 + idx * 32, SEEK_SET);
-    fwrite(&empty_direct, sizeof(struct fs_dirent), 1, fp);
 
-    fseek(fp, current_inode.ptrs[0] * 4096, SEEK_SET);
-    fread(entries, sizeof(struct fs_inode), 1, fp);
 
-    printf("%d, ", entries[0].valid);
+    struct fs_dirent entries[128];
+    block_read(entries, current_inode.ptrs[0], 1);
 
-    struct fs_inode empty_node;
-    fseek(fp, file_inum * 4096, SEEK_SET);
-    fwrite(&empty_node, sizeof(struct fs_inode), 1, fp);
+    for (int i = 0; i < 128; i++) {
+        if (strcmp(entries[i].name, file_name) == 0) {
+            strcpy(entries[i].name, "");
+            entries[i].valid = 0;
+            entries[i].inode = 0;
+        }
+    }
 
+    block_write(entries, current_inode.ptrs[0], 1);
+    struct fs_inode *empty_node = malloc(4096);
+    block_write(empty_node, file_inum, 1);
     bit_clear(bit_map, file_inum);
-
-    // need to remove block data
-
-    return -EOPNOTSUPP;
+    block_write(bit_map, 1, 1);
+    return 0;
 }
 
 /* rmdir - remove a directory
@@ -564,62 +455,37 @@ int fs_rmdir(const char *path)
     if (inum < 0) return inum;
     char directory_name[28];
     strcpy(directory_name, pathv[pathc - 1]);
-
-    printf("%d\n", inum);
-
-    fp = fopen("test.img", "r+");
-    if (fp == NULL) {
-        fprintf(stderr, "failed.");
-        return -1;
-    }
-
     struct fs_inode current_inode;
-
-    fseek(fp, inum * 4096, SEEK_SET);
-    fread(&current_inode, sizeof(struct fs_inode), 1, fp);
-
+    block_read(&current_inode, inum, 1);
     if (current_inode.mode & 0100000) return ENOTDIR;
-
-
-    printf("%d,,\n", current_inode.mode);
     struct fs_dirent entries[128];
 
-    fseek(fp, current_inode.ptrs[0] * 4096, SEEK_SET);
-    fread(entries, sizeof(struct fs_inode), 1, fp);
-
+    block_read(entries, current_inode.ptrs[0], 1);
     for (int i = 0; i < 128; i++) {
         if (entries[i].valid) return ENOTEMPTY;
     }
     int p_inum = translate(pathc - 1, pathv);
-
     struct fs_inode parent_inode;
+    block_read(&parent_inode, p_inum, 1);
+    struct fs_dirent *parent_entries = calloc(128, sizeof(struct fs_dirent));
+    block_read(parent_entries, parent_inode.ptrs[0], 1);
 
-    fseek(fp, p_inum * 4096, SEEK_SET);
-    fread(&parent_inode, sizeof(struct fs_inode), 1, fp);
-
-
-    struct fs_dirent parent_entries[128];
-
-    fseek(fp, parent_inode.ptrs[0] * 4096, SEEK_SET);
-    fread(parent_entries, sizeof(struct fs_inode), 1, fp);
-
-    int idx = -1;
     for (int i = 0; i < 128; i++) {
-        if (strcmp(parent_entries->name, directory_name) == 0) {
-            idx = i;
+        if (parent_entries[i].valid) {
+            if (strcmp(parent_entries[i].name, directory_name) == 0) {
+                strcpy(parent_entries[i].name, "");
+                parent_entries[i].valid = 0;
+                parent_entries[i].inode = 0;
+            }
         }
     }
-    struct fs_dirent empty_direct;
 
-    fseek(fp, p_inum * 4096 + idx * 32, SEEK_SET);
-    fwrite(&empty_direct, sizeof(struct fs_dirent), 1, fp);
-
-    struct fs_inode empty_node;
-    fseek(fp, inum * 4096, SEEK_SET);
-    fwrite(&empty_node, sizeof(struct fs_inode), 1, fp);
-
+    block_write(parent_entries, parent_inode.ptrs[0], 1);
+    struct fs_inode *empty_node = malloc(sizeof(struct fs_inode));
+    block_write(empty_node, inum, 1);
     bit_clear(bit_map, inum);
-
+    bit_clear(bit_map, current_inode.ptrs[0]);
+    block_write(bit_map, 1, 1);
 
     return 0;
 }
@@ -670,32 +536,21 @@ int fs_rename(const char *src_path, const char *dst_path)
         if (strcmp(dst_pathv[i], src_pathv[i]) != 0) return -EINVAL;
     }
 
-    uint32_t inum = translate(count - 1, src_pathv);
-    fp = NULL;
-    fp = fopen("test.img", "r+");
-    if (fp == NULL) {
-        fprintf(stderr, "failed.");
-        return -ENOENT;
-    }
+    int inum = translate(count - 1, src_pathv);
 
     struct fs_inode current_inode;
-    fseek(fp, inum * 4096, SEEK_SET);
-    fread(&current_inode, sizeof(struct  fs_inode), 1, fp);
-
+    block_read(&current_inode, inum, 1);
     struct fs_dirent entries[128];
-    fseek(fp, current_inode.ptrs[0] * 4096, SEEK_SET);
+    block_read(entries, current_inode.ptrs[0], 1);
 
-    fread(&entries, sizeof(struct fs_inode), 1, fp);
     int idx = -1;
     for (int i = 0; i < 128; i++) {
         if (strcmp(entries[i].name, dst_pathv[count_dst - 1]) == 0) return -EEXIST;
         if (strcmp(entries[i].name, src_pathv[count - 1]) == 0) idx = i;
     }
     if (idx == -1) return -ENOENT;
-
     strcpy(entries[idx].name, dst_pathv[count_dst - 1]);
-    fseek(fp, current_inode.ptrs[0] * 4096 + idx * sizeof(struct fs_dirent), SEEK_SET);
-    fwrite(&entries[idx], sizeof(struct fs_dirent), 1, fp);
+    block_write(entries, current_inode.ptrs[0], 1);
 
     return 0;
 }
@@ -715,22 +570,11 @@ int fs_chmod(const char *path, mode_t mode)
     int inum = translate(pathc, pathv);
     if (inum < 0) return inum;
 
-    fp = NULL;
-    fp = fopen("test.img", "r+");
-    if (fp == NULL) {
-        fprintf(stderr, "failed.");
-        return -ENOENT;
-    }
-
     struct fs_inode current_inode;
-
-    fseek(fp, inum * 4096, SEEK_SET);
-    fread(&current_inode, sizeof(struct  fs_inode), 1, fp);
+    block_read(&current_inode, inum, 1);
     current_inode.mode = current_inode.mode & 49152;
     current_inode.mode = mode | current_inode.mode;
-
-    fseek(fp, inum * 4096, SEEK_SET);
-    fwrite(&current_inode, sizeof(struct fs_inode), 1, fp);
+    block_write(&current_inode, inum, 1);
 
     return 0;
 }
@@ -947,14 +791,14 @@ int fs_statfs(const char *path, struct statvfs *st)
 
     fp = NULL;
     fp = fopen("test.img", "r");
-    if (fp == NULL) {
-        fprintf(stderr, "failed.");
-        return -1;
-    }
+//    if (fp == NULL) {
+//        fprintf(stderr, "failed.");
+//        return -1;
+//    }
 
-    fread(&super_block, sizeof(struct fs_super), 1, fp);
-    fread(bit_map, sizeof(bit_map), 1, fp);
-    fread(&root_inode, sizeof(struct fs_inode), 1, fp);
+    block_read(&super_block, 0, 1);
+    block_read(bit_map, 1, 1);
+    block_read(&root_inode, 2, 1);
 
     st->f_bsize = sizeof(super_block);
     st->f_blocks = super_block.disk_size;
@@ -967,7 +811,6 @@ int fs_statfs(const char *path, struct statvfs *st)
     st->f_bavail = super_block.disk_size - blocks_used;
     struct fs_dirent f;
     st->f_namemax = sizeof(f.name) - 1;
-
 
     return 0;
 }

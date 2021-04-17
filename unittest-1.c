@@ -261,7 +261,7 @@ START_TEST(fs_rename_test)
         // rename a file
         ck_assert_int_eq(fs_ops.rename("/file.10", "/new_name.10"), 0);
         char *c = calloc(15000, sizeof(char));
-        ck_assert_int_gt(fs_ops.read("new_namtte.10", c, file_table[1].len, 0, NULL), 0);
+        ck_assert_int_gt(fs_ops.read("new_name.10", c, file_table[1].len, 0, NULL), 0);
         // rename a directory
         ck_assert_int_eq(fs_ops.rename("/dir2", "/new_dir2"), 0);
         char *c1 = calloc(15000, sizeof(char));
@@ -319,14 +319,14 @@ int main(int argc, char **argv)
 
     tcase_add_test(tc, a_test); /* see START_TEST above */
     /* add more tests here */
-   // TCase *tc1 = tcase_create("fs_getattr");
-    //tcase_add_test(tc, fs_getattr_test);
+
+//    tcase_add_test(tc, fs_getattr_test);
 //    tcase_add_test(tc, fs_readdir_test);
-//    tcase_add_test(tc, fs_read_test);
+    tcase_add_test(tc, fs_read_test);
 //    tcase_add_test(tc, fs_statfs_test);
-  //  tcase_add_test(tc, fs_rename_test);
-    tcase_add_test(tc, fs_chmod_test);
-    // tcase_add_test(tc, )
+//    tcase_add_test(tc, fs_rename_test);
+//    tcase_add_test(tc, fs_chmod_test);
+
 
 
     suite_add_tcase(s, tc);
