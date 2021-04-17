@@ -74,12 +74,12 @@ void* fs_init(struct fuse_conn_info *conn)
         fprintf(stderr, "failed.");
         return NULL;
     }
-    printf("test case___");
+
     fread(&super_block, sizeof(struct fs_super), 1, fp);
     fread(bit_map, sizeof(bit_map), 1, fp);
     fread(&root_inode, sizeof(struct fs_inode), 1, fp);
 
-    fclose(fp);
+   // fclose(fp);
     return NULL;
 }
 
@@ -144,8 +144,6 @@ int parse(const char *path, char **argv)
 
 
 int translate(int local_pathc, char **local_pathv) {
-
-
     fp = fopen("test.img", "r");
     if (fp == NULL) {
         fprintf(stderr, "failed.");
@@ -161,14 +159,8 @@ int translate(int local_pathc, char **local_pathv) {
         if (current_inode.mode & S_IFDIR) {
             struct fs_dirent entries[128];
             fseek(fp, current_inode.ptrs[0] * 4096, SEEK_SET);
+            fread(&entries, sizeof(struct fs_inode), 1, fp);
 
-            unsigned int res = fread(&entries, sizeof(struct fs_inode), 1, fp);
-
-            printf("move return is %ul\n", res);
-
-            printf("last%d\n", current_inode.ptrs[0]);
-            printf("mode is %s\n", entries[0].name);
-            printf("mode is %d\n", entries[0].valid);
             for (int j = 0; j < 128; j++) {
                 if (entries[j].valid) {
                     if (strcmp(entries[j].name, local_pathv[i]) == 0) {
@@ -178,18 +170,9 @@ int translate(int local_pathc, char **local_pathv) {
                 }
 
                 if (j == 127) {
-                    printf("return here");
                     return -ENOENT;
                 }
             }
-            //printf("return here");
-//            printf("address is %d\n", ptrs_on_inode[0]);
-//            printf("address is %d\n", current_inode.ptrs[1]);
-//            printf("address is %d\n", current_inode.ptrs[2]);
-//            printf("address is %d\n", current_inode.ptrs[3]);
-//            printf("address is %d\n", current_inode.ptrs[4]);
-//            printf("address is %d\n", current_inode.ptrs[5]);
-//            printf("address is %d\n", current_inode.ptrs[6]);
         } else {
             return -ENOTDIR;
         }
@@ -201,20 +184,11 @@ int translate(int local_pathc, char **local_pathv) {
 int fs_getattr(const char *path, struct stat *sb)
 {
     /* your code here */
-    //char *argv[];
-    //char *argv[10];
     *pathv = NULL;
     parse(path, pathv);
-    //pathv = argv;
-    printf("path is %s\n", pathv[0]);
-    printf("path is %s\n", pathv[1]);
-    printf("path is %s\n", pathv[2]);
-    printf("has %d fiels\n", pathc);
 
-    uint32_t inum = translate(pathc, pathv);
-    printf("nd is %d \n", inum);
+    int inum = translate(pathc, pathv);
     if (inum < 0) return inum;
-    fp = NULL;
     fp = fopen("test.img", "r");
     if (fp == NULL) {
         fprintf(stderr, "failed.");
@@ -224,24 +198,15 @@ int fs_getattr(const char *path, struct stat *sb)
     fseek(fp, inum * 4096, SEEK_SET);
     fread(&attr, sizeof(struct fs_inode), 1, fp);
 
-    printf("size is %d \n", attr.mode);
-
-//    struct fs_dirent *temp = malloc(sizeof (struct fs_dirent));
-//
-//
-    //sb = malloc(sizeof(struct stat));
     sb->st_nlink = 1;
     sb->st_uid = attr.uid;
     sb->st_gid = attr.gid;
-
     sb->st_atime = attr.mtime;
     sb->st_mtime = attr.mtime;
     sb->st_ctime = attr.ctime;
     sb->st_mode = attr.mode;
-
     sb->st_size = attr.size;
-   // sb->
-    printf("mode is %li this one\n", sb->st_mtim.tv_sec);
+
     return 0;
 }
 
@@ -257,14 +222,6 @@ int fs_getattr(const char *path, struct stat *sb)
  * hint - check the testing instructions if you don't understand how
  *        to call the filler function
  */
-int test_filler(void *ptr, const char *name,
-                const struct stat *st, off_t off)
-{
-    struct fs_dirent *s = ptr;
-
-    printf("file: %s, mode: %o\n", name, st->st_mode);
-    return 0;
-}
 
 int fs_readdir(const char *path, void *ptr, fuse_fill_dir_t filler,
 		       off_t offset, struct fuse_file_info *fi)
@@ -272,47 +229,31 @@ int fs_readdir(const char *path, void *ptr, fuse_fill_dir_t filler,
     /* your code here */
     *pathv = NULL;
     parse(path, pathv);
-    uint32_t inum = translate(pathc, pathv);
-
+    int inum = translate(pathc, pathv);
+    if (inum < 0) return inum;
     fp = fopen("test.img", "r");
     if (fp == NULL) {
         fprintf(stderr, "failed.");
+        return -1;
     }
-
     struct fs_inode current_inode;
 
     fseek(fp, inum * 4096, SEEK_SET);
     fread(&current_inode, sizeof(struct  fs_inode), 1, fp);
-    printf("inum is %d\n", current_inode.size);
-
-
-
-
-
-
 
     struct fs_dirent entries[128];
 
     fseek(fp, current_inode.ptrs[0] * 4096, SEEK_SET);
-    int res = fread(&ptr, sizeof(struct fs_inode), 1, fp);
-
-   // printf("mode is %d\n", *(struct direct)ptr[0].name);
+    fread(entries, sizeof(struct fs_inode), 1, fp);
 
 
     for (int i = 0; i < 128; i++) {
         if (entries[i].valid) {
-            struct stat *st = malloc(sizeof(struct stat));
-            //filler(&ptr[0], entries[i].name, st, 0);
+            filler(ptr, entries[i].name, NULL, i);
         }
     }
 
-//    filler(ptr, ".", NULL, 0);
-//    filler(ptr, "..", NULL, 0);
-
-
-
-
-    return -EOPNOTSUPP;
+    return 0;
 }
 
 /* create - create a new file with specified permissions
@@ -701,15 +642,11 @@ int fs_rename(const char *src_path, const char *dst_path)
     /* your code here */
     *pathv = NULL;
 
-    printf("__");
     parse(src_path, pathv);
     char *src_pathv[10];
-    printf("__");
     int count = 0;
     for (int i = 0; i < 10; i++) {
-        printf("__");
         if (pathv[i]) {
-            printf("__");
             count++;
             src_pathv[i] = malloc(28);
            strncpy(src_pathv[i], pathv[i], 28);
@@ -719,16 +656,12 @@ int fs_rename(const char *src_path, const char *dst_path)
     char *dst_pathv[10];
     parse(dst_path, pathv);
     for (int i = 0; i < 10; i++) {
-        printf("__");
         if (pathv[i]) {
-            printf("__");
             count_dst++;
             dst_pathv[i] = malloc(28);
             strncpy(dst_pathv[i], pathv[i], 28);
         }
     }
-//    //strncpy(*src_pathv, *pathv, 10);
-    printf("%d\n", count);
 
     if (count != count_dst) return -EINVAL;
     if (strcmp(dst_pathv[count - 1], src_pathv[count - 1]) == 0) return -EEXIST;
@@ -746,25 +679,24 @@ int fs_rename(const char *src_path, const char *dst_path)
     }
 
     struct fs_inode current_inode;
-
     fseek(fp, inum * 4096, SEEK_SET);
     fread(&current_inode, sizeof(struct  fs_inode), 1, fp);
-    printf("inum is %d\n", current_inode.size);
 
     struct fs_dirent entries[128];
     fseek(fp, current_inode.ptrs[0] * 4096, SEEK_SET);
 
-    unsigned int res = fread(&entries, sizeof(struct fs_inode), 1, fp);
+    fread(&entries, sizeof(struct fs_inode), 1, fp);
     int idx = -1;
     for (int i = 0; i < 128; i++) {
         if (strcmp(entries[i].name, dst_pathv[count_dst - 1]) == 0) return -EEXIST;
         if (strcmp(entries[i].name, src_pathv[count - 1]) == 0) idx = i;
-        //printf("name is%s, %s\n", entries[i].name, src_pathv[count - 1]);
     }
     if (idx == -1) return -ENOENT;
-    //entries[idx].name = dst_pathv[count_dst - 1];
+
     strcpy(entries[idx].name, dst_pathv[count_dst - 1]);
-    printf("%s\n", entries[idx].name);
+    fseek(fp, current_inode.ptrs[0] * 4096 + idx * sizeof(struct fs_dirent), SEEK_SET);
+    fwrite(&entries[idx], sizeof(struct fs_dirent), 1, fp);
+
     return 0;
 }
 
@@ -794,13 +726,11 @@ int fs_chmod(const char *path, mode_t mode)
 
     fseek(fp, inum * 4096, SEEK_SET);
     fread(&current_inode, sizeof(struct  fs_inode), 1, fp);
-    printf("inum is %d\n", inum);
-    printf("mode is %u", current_inode.mode); // 33206
-    current_inode.mode = mode & 0777;
-    printf("mode is %u", current_inode.mode); // 33206
+    current_inode.mode = current_inode.mode & 49152;
+    current_inode.mode = mode | current_inode.mode;
 
-
-
+    fseek(fp, inum * 4096, SEEK_SET);
+    fwrite(&current_inode, sizeof(struct fs_inode), 1, fp);
 
     return 0;
 }
@@ -896,8 +826,8 @@ int fs_read(const char *path, char *buf, size_t len, off_t offset,
     /* your code here */
     *pathv = NULL;
     parse(path, pathv);
-    uint32_t inum = translate(pathc, pathv);
-    if (inum < 0) return (int)inum;
+    int inum = translate(pathc, pathv);
+    if (inum < 0) return inum;
 
     fp = fopen("test.img", "r");
     if (fp == NULL) {
@@ -919,28 +849,15 @@ int fs_read(const char *path, char *buf, size_t len, off_t offset,
 
     long idx_block = offset / 4096;
     long idx_offset = offset % 4096;
-  //  printf("%d \n", idx_offset);
- //   printf("%d \n", idx_block);
-    printf("%d\n", current_inode.ptrs[idx_block]);
+
     while (len > 0) {
-        fseek(fp, current_inode.ptrs[idx_block++] * 4096 + offset, SEEK_SET);
-        size_t read_bytes = idx_offset + len > 4096? 4096 - offset : len;
-
+        fseek(fp, current_inode.ptrs[idx_block++] * 4096 + idx_offset, SEEK_SET);
+        size_t read_bytes = idx_offset + len > 4096? 4096 - idx_offset : len;
+        fread(&buf[count_byte + offset], read_bytes, 1, fp);
         count_byte += read_bytes;
-
-        //printf("%d\n", read_bytes);
-        int res = fread(buf, read_bytes, 1, fp);
-        printf("%d\n", res);
         idx_offset = 0;
         len -= read_bytes;
     }
-
-    printf("address is %s", buf);
-    //current_inode.ptrs;
-
-
-
-
 
     return (int)count_byte;
 }
@@ -959,8 +876,8 @@ int fs_write(const char *path, const char *buf, size_t len,
     /* your code here */
     *pathv = NULL;
     parse(path, pathv);
-    uint32_t inum = translate(pathc, pathv);
-    if (inum < 0) return (int)inum;
+    int inum = translate(pathc, pathv);
+    if (inum < 0) return inum;
 
     fp = fopen("test.img", "r+");
     if (fp == NULL) {
@@ -1045,16 +962,14 @@ int fs_statfs(const char *path, struct statvfs *st)
     int blocks_used = 0;
     for (int i = 0; i < sizeof(bit_map) * 8; i++) {
         if(bit_test(bit_map, i) > 0) blocks_used++;
-        //if (bit_map[i] != 0) blocks_used++;
     }
-    st->f_bfree = blocks_used;
+    st->f_bfree = super_block.disk_size - blocks_used;
     st->f_bavail = super_block.disk_size - blocks_used;
     struct fs_dirent f;
     st->f_namemax = sizeof(f.name) - 1;
-    printf("used is %lu \n", st->f_namemax);
 
 
-    return -EOPNOTSUPP;
+    return 0;
 }
 
 /* operations vector. Please don't rename it, or else you'll break things

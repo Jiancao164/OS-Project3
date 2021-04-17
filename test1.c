@@ -13,7 +13,7 @@ int main() {
     struct fuse_file_info fi;
     off_t offset = 0;
 
-    //fs_readdir("/dir3", entries, test_filler, offset, &fi);
+    fs_readdir("/dir3", entries, test_filler, offset, &fi);
     char buf[15000];
 
     //fs_read("/dir3/subdir/file.8k-", buf, 30, 0, &fi);
@@ -28,7 +28,7 @@ int main() {
     //fs_create("/dir3/subdir/new_Created_File.4k-", mode, &fi);
     //fs_mkdir("/dir2/twenty-seven-byte-file-name", mode);
 
-    fs_rmdir("/dir2/twenty-seven-byte-file-name");
+    //fs_rmdir("/dir2/twenty-seven-byte-file-name");
     //fs_unlink("/dir3/subdir/file.4k-");
 
 
