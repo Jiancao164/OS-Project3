@@ -147,10 +147,12 @@ int translate(int local_pathc, char **local_pathv) {
                 }
             }
         } else {
+//            if (i != local_pathc - 1) {
+//                return -ENOTDIR;
+//            }
             return -ENOTDIR;
         }
     }
-
 
     return inum;
 }
@@ -173,10 +175,8 @@ int fs_getattr(const char *path, struct stat *sb)
     /* your code here */
     *pathv = NULL;
     parse(path, pathv);
-
     int inum = translate(pathc, pathv);
     if (inum < 0) return inum;
-
     struct fs_inode attr;
     block_read(&attr, inum, 1);
 
@@ -247,18 +247,16 @@ int fs_create(const char *path, mode_t mode, struct fuse_file_info *fi)
     /* your code here */
     *pathv = NULL;
     parse(path, pathv);
-    int inum = translate(pathc, pathv);
-    if (inum > 0) return inum;
-    printf("now is %d", inum);
-    inum = translate(pathc - 1, pathv);
+    int inum = translate(pathc - 1, pathv);
     if (inum < 0) return inum;
-
     struct fs_inode current_inode;
     block_read(&current_inode, inum, 1);
     if (current_inode.mode & 0100000) return -ENOENT;
-
+    inum = translate(pathc, pathv);
+    if (inum > 0) return -EEXIST;
     struct fs_dirent *entries = malloc(4096);
     block_read(entries, current_inode.ptrs[0], 1);
+
 
     int count_valid = 0;
     long empty_idx = -1;
@@ -322,14 +320,17 @@ int fs_mkdir(const char *path, mode_t mode)
     /* your code here */
     *pathv = NULL;
     parse(path, pathv);
-    int inum = translate(pathc, pathv);
-    if (inum > 0) return EEXIST;
-    inum = translate(pathc - 1, pathv);
-    if (inum < 0) return EEXIST;
+
+    int inum = translate(pathc - 1, pathv);
+    if (inum < 0) return -ENOENT;
 
     struct fs_inode current_inode;
-    if (current_inode.mode & 0100000) return -ENOENT;
     block_read(&current_inode, inum, 1);
+    if (current_inode.mode & 0100000) return -ENOENT;
+
+    inum = translate(pathc, pathv);
+    if (inum > 0) return -EEXIST;
+
     struct fs_dirent entries[128];;
     block_read(entries, current_inode.ptrs[0], 1);
 
@@ -412,6 +413,7 @@ int fs_unlink(const char *path)
 
     struct fs_inode *file_node = malloc(4096);
     block_read(file_node, file_inum, 1);
+    if (file_node->mode & 040000) return -EISDIR;
 
     for (int i = 0; i < FS_BLOCK_SIZE/4 - 5; i++) {
         if (file_node->ptrs[i] != 0) {
@@ -457,16 +459,17 @@ int fs_rmdir(const char *path)
     strcpy(directory_name, pathv[pathc - 1]);
     struct fs_inode current_inode;
     block_read(&current_inode, inum, 1);
-    if (current_inode.mode & 0100000) return ENOTDIR;
+    if (current_inode.mode & 0100000) return -ENOTDIR;
     struct fs_dirent entries[128];
 
     block_read(entries, current_inode.ptrs[0], 1);
     for (int i = 0; i < 128; i++) {
-        if (entries[i].valid) return ENOTEMPTY;
+        if (entries[i].valid) return -ENOTEMPTY;
     }
     int p_inum = translate(pathc - 1, pathv);
     struct fs_inode parent_inode;
     block_read(&parent_inode, p_inum, 1);
+    if (parent_inode.mode & 0100000) return -ENOTDIR;
     struct fs_dirent *parent_entries = calloc(128, sizeof(struct fs_dirent));
     block_read(parent_entries, parent_inode.ptrs[0], 1);
 
@@ -587,24 +590,18 @@ int fs_utime(const char *path, struct utimbuf *ut)
     int inum = translate(pathc, pathv);
     if (inum < 0) return inum;
 
-    fp = NULL;
-    fp = fopen("test.img", "r+");
-    if (fp == NULL) {
-        fprintf(stderr, "failed.");
-        return -ENOENT;
-    }
-
-
 
     struct fs_inode current_inode;
-    fseek(fp, inum * 4096, SEEK_SET);
-    fread(&current_inode, sizeof(struct  fs_inode), 1, fp);
+    block_read(&current_inode, inum, 1);
+//    fseek(fp, inum * 4096, SEEK_SET);
+//    fread(&current_inode, sizeof(struct  fs_inode), 1, fp);
 
     current_inode.mtime = ut->modtime;
     current_inode.ctime = ut->actime;
 
-    fseek(fp, inum * 4096, SEEK_SET);
-    fwrite(&current_inode, sizeof(current_inode), 1, fp);
+    block_write(&current_inode, inum, 1);
+//    fseek(fp, inum * 4096, SEEK_SET);
+//    fwrite(&current_inode, sizeof(current_inode), 1, fp);
 
     return 0;
 }
@@ -629,30 +626,17 @@ int fs_truncate(const char *path, off_t len)
     if (inum < 0) return inum;
 
 
-    fp = fopen("test.img", "r+");
-    if (fp == NULL) {
-        fprintf(stderr, "failed.");
-        return -1;
-    }
-
     struct fs_inode current_inode;
 
-    fseek(fp, inum * 4096, SEEK_SET);
-    fread(&current_inode, sizeof(struct  fs_inode), 1, fp);
-
+    block_read(&current_inode, inum, 1);
     if (current_inode.mode & 040000) return -EISDIR;
-
-
 
     for (int i = 0; i < 1019; i++) {
         if (current_inode.ptrs[i]) {
             uint32_t add = current_inode.ptrs[i];
-            fseek(fp, add, SEEK_SET);
-            fwrite("", 4096, 1, fp);
+            block_write("", add, 1);
         }
     }
-
-
     return 0;
 }
 
@@ -673,7 +657,7 @@ int fs_read(const char *path, char *buf, size_t len, off_t offset,
     int inum = translate(pathc, pathv);
     if (inum < 0) return inum;
 
-    fp = fopen("test.img", "r");
+    fp = fopen("test1.img", "r");
     if (fp == NULL) {
         fprintf(stderr, "failed.");
         return -1;
@@ -721,23 +705,22 @@ int fs_write(const char *path, const char *buf, size_t len,
     *pathv = NULL;
     parse(path, pathv);
     int inum = translate(pathc, pathv);
+
+    printf("inode is %d\n", inum);
+
     if (inum < 0) return inum;
 
-    fp = fopen("test.img", "r+");
-    if (fp == NULL) {
-        fprintf(stderr, "failed.");
-        return -1;
-    }
+
 
     struct fs_inode current_inode;
 
-    fseek(fp, inum * 4096, SEEK_SET);
-    fread(&current_inode, sizeof(struct  fs_inode), 1, fp);
+    block_read(&current_inode, inum, 1);
+//    fseek(fp, inum * 4096, SEEK_SET);
+//    fread(&current_inode, sizeof(struct  fs_inode), 1, fp);
 
     if (current_inode.mode & 040000) return -EISDIR;
-
-    if ((FS_BLOCK_SIZE/4 - 5) * 4096 > offset) return -EINVAL;
-
+    printf("inode is %d\n", inum);
+    if ((FS_BLOCK_SIZE/4 - 5) * 4096 < offset) return -EINVAL;
 
     if (offset + len > (FS_BLOCK_SIZE/4 - 5) * 4096) {
         len = (FS_BLOCK_SIZE/4 - 5) * 4096 - offset;
@@ -749,25 +732,33 @@ int fs_write(const char *path, const char *buf, size_t len,
     //  printf("%d \n", idx_offset);
     //   printf("%d \n", idx_block);
 
-
+    printf("inode is %d\n", inum);
 
     printf("%d\n", current_inode.ptrs[idx_block]);
-    size_t idx = 0;
+    int idx = 0;
+    //printf("%s\n", buf);
+ //   int c = block_write(buf, current_inode.ptrs[idx_block++], 1);
+//    printf("c is %d\n", c);
+//    char *bf = malloc(4096);
+//    block_read(bf, 4,1);
+//    printf("bf  %s is \n", bf);
+    printf("addresss is %p ,, %p", &buf, &buf[0]);
     while (len > 0) {
-        fseek(fp, current_inode.ptrs[idx_block++] * 4096 + offset, SEEK_SET);
+
+     //   fseek(fp, current_inode.ptrs[idx_block++] * 4096 + offset, SEEK_SET);
         size_t read_bytes = idx_offset + len > 4096? 4096 - offset : len;
 
         count_byte += read_bytes;
 
         //printf("%d\n", read_bytes);
-
-        fwrite(&buf[idx], read_bytes, 1, fp);
+        block_write(&buf[idx], current_inode.ptrs[idx_block++], 1);
+//        fwrite(&buf[idx], read_bytes, 1, fp);
         idx += read_bytes;
 
         idx_offset = 0;
         len -= read_bytes;
     }
-
+    printf("%d---\n", count_byte);
     return count_byte;
 }
 

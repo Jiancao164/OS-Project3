@@ -261,11 +261,13 @@ START_TEST(fs_rename_test)
         // rename a file
         ck_assert_int_eq(fs_ops.rename("/file.10", "/new_name.10"), 0);
         char *c = calloc(15000, sizeof(char));
-        ck_assert_int_gt(fs_ops.read("new_name.10", c, file_table[1].len, 0, NULL), 0);
+        struct stat *st = malloc(4096);
+        ck_assert_int_eq(fs_ops.getattr("/new_name.10", st), 0);
         // rename a directory
         ck_assert_int_eq(fs_ops.rename("/dir2", "/new_dir2"), 0);
         char *c1 = calloc(15000, sizeof(char));
-        ck_assert_int_gt(fs_ops.read("/new_dir2/file.4k+", c1, file_table[4].len, 0, NULL), 0);
+        ck_assert_int_eq(fs_ops.getattr("/new_dir2/file.4k+", st), 0);
+        //ck_assert_int_gt(fs_ops.read("/new_dir2/file.4k+", c1, file_table[4].len, 0, NULL), 0);
     }
 END_TEST
 
@@ -320,12 +322,12 @@ int main(int argc, char **argv)
     tcase_add_test(tc, a_test); /* see START_TEST above */
     /* add more tests here */
 
-//    tcase_add_test(tc, fs_getattr_test);
-//    tcase_add_test(tc, fs_readdir_test);
+    tcase_add_test(tc, fs_getattr_test);
+    tcase_add_test(tc, fs_readdir_test);
     tcase_add_test(tc, fs_read_test);
-//    tcase_add_test(tc, fs_statfs_test);
-//    tcase_add_test(tc, fs_rename_test);
-//    tcase_add_test(tc, fs_chmod_test);
+    tcase_add_test(tc, fs_statfs_test);
+    tcase_add_test(tc, fs_rename_test);
+    tcase_add_test(tc, fs_chmod_test);
 
 
 
