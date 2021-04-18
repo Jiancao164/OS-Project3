@@ -104,7 +104,6 @@ START_TEST(fs_rmdir_test)
 
         struct stat st;
         ck_assert_int_lt(fs_ops.getattr("/dir2", &st), 0);
-
         ck_assert_int_eq(fs_ops.rmdir("/dir1/dir3/file4.0"), -ENOENT);
         ck_assert_int_eq(fs_ops.rmdir("/file1.0/file4.0"), -ENOTDIR);
         ck_assert_int_eq(fs_ops.rmdir("/dir19.0"), -ENOENT);
@@ -119,7 +118,6 @@ START_TEST(fs_unlink_test)
         fs_ops.unlink("/file1.0");
         struct stat st;
         ck_assert_int_lt(fs_ops.getattr("/file1.0", &st), 0);
-
         ck_assert_int_eq(fs_ops.unlink("/dir1/dir3/file4.0"), -ENOENT);
         ck_assert_int_eq(fs_ops.unlink("/file1.0/file4.0"), -ENOENT);
         ck_assert_int_eq(fs_ops.unlink("/file19.0"), -ENOENT);
@@ -139,11 +137,8 @@ START_TEST(fs_write_test)
         }
         fs_ops.create("/file7.4k", 0100777, NULL);
         int c = fs_ops.write("/file7.4k", buf, 4096, 0, NULL); // 4000 bytes, offset=0
-        printf("rad is %c\n", c);
         char *buf1 = malloc(4096);
         fs_ops.read("/file7.4k", buf1, 4096, 0, NULL);
-
-        printf("%s, is thi\n", buf1);
 
     }
 END_TEST
@@ -152,11 +147,7 @@ START_TEST(fs_truncate_test)
     {
         char *buf1 = malloc(4096);
         fs_ops.read("/file7.4k", buf1, 4096, 0, NULL);
-
-        printf("%s, _____________\n", buf1);
-
         fs_ops.truncate("/file7.4k", 0);
-
         char *buf2 = malloc(4096);
         fs_ops.read("/file7.4k", buf2, 4096, 0, NULL);
 
@@ -207,20 +198,17 @@ int main(int argc, char **argv)
     block_init("test2.img");
     fs_ops.init(NULL);
 
-
-    
     Suite *s = suite_create("fs5600");
     TCase *tc = tcase_create("write_mostly");
 
     tcase_add_test(tc, a_test); /* see START_TEST above */
     /* add more tests here */
-//    tcase_add_test(tc, fs_mkdir_test);
-//    tcase_add_test(tc, fs_create_test);
-//    tcase_add_test(tc, fs_rmdir_test);
-  //  tcase_add_test(tc, fs_unlink_test);
-
- //  tcase_add_test(tc, fs_write_test);
-//    tcase_add_test(tc, fs_truncate_test);
+    tcase_add_test(tc, fs_mkdir_test);
+    tcase_add_test(tc, fs_create_test);
+    tcase_add_test(tc, fs_rmdir_test);
+    tcase_add_test(tc, fs_unlink_test);
+    tcase_add_test(tc, fs_write_test);
+    tcase_add_test(tc, fs_truncate_test);
     tcase_add_test(tc, fs_utime_test);
 
     suite_add_tcase(s, tc);
