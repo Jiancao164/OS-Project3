@@ -240,13 +240,15 @@ START_TEST(fs_read_test)
             for (int j = 0; j < 6; j++) {
                 int cnt = file_table[i].len / size[j];
                 int mod = file_table[i].len % size[j];
-                char *c = calloc(15000, sizeof(char));
 
+                char *c = calloc(15000, sizeof(char));
+                int count = 0;
                 for (int z = 0; z < cnt; z++) {
-                    ck_assert_int_ge(fs_ops.read(file_table[i].path, c, size[j], z * size[j], NULL), 0);
+                    ck_assert_int_ge(fs_ops.read(file_table[i].path, c + count, size[j], z * size[j], NULL), 0);
+                    count += size[j];
                 }
 
-                ck_assert_int_ge(fs_ops.read(file_table[i].path, c, mod, cnt * size[j], NULL), 0);
+                ck_assert_int_ge(fs_ops.read(file_table[i].path, c + count, mod, cnt * size[j], NULL), 0);
                 unsigned cksum = crc32(0, (Bytef*)c, file_table[i].len);
                 ck_assert_int_eq(cksum, file_table[i].cksum);
                 free(c);
@@ -260,14 +262,11 @@ START_TEST(fs_rename_test)
     {
         // rename a file
         ck_assert_int_eq(fs_ops.rename("/file.10", "/new_name.10"), 0);
-        char *c = calloc(15000, sizeof(char));
         struct stat *st = malloc(4096);
         ck_assert_int_eq(fs_ops.getattr("/new_name.10", st), 0);
         // rename a directory
         ck_assert_int_eq(fs_ops.rename("/dir2", "/new_dir2"), 0);
-        char *c1 = calloc(15000, sizeof(char));
         ck_assert_int_eq(fs_ops.getattr("/new_dir2/file.4k+", st), 0);
-        //ck_assert_int_gt(fs_ops.read("/new_dir2/file.4k+", c1, file_table[4].len, 0, NULL), 0);
     }
 END_TEST
 
@@ -314,8 +313,6 @@ int main(int argc, char **argv)
     block_init("test.img");
     fs_ops.init(NULL);
 
-
-    
     Suite *s = suite_create("fs5600");
     TCase *tc = tcase_create("read_mostly");
 
