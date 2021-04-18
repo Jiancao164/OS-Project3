@@ -63,7 +63,7 @@ int bit_test(unsigned char *map, int i)
 struct fs_super super_block;
 unsigned char bit_map[4 * 1024];
 struct fs_inode root_inode;
-static FILE *fp;
+
 
 void* fs_init(struct fuse_conn_info *conn)
 {
@@ -593,16 +593,9 @@ int fs_utime(const char *path, struct utimbuf *ut)
 
     struct fs_inode current_inode;
     block_read(&current_inode, inum, 1);
-//    fseek(fp, inum * 4096, SEEK_SET);
-//    fread(&current_inode, sizeof(struct  fs_inode), 1, fp);
-
     current_inode.mtime = ut->modtime;
     current_inode.ctime = ut->actime;
-
     block_write(&current_inode, inum, 1);
-//    fseek(fp, inum * 4096, SEEK_SET);
-//    fwrite(&current_inode, sizeof(current_inode), 1, fp);
-
     return 0;
 }
 
@@ -655,39 +648,34 @@ int fs_read(const char *path, char *buf, size_t len, off_t offset,
     *pathv = NULL;
     parse(path, pathv);
     int inum = translate(pathc, pathv);
+
     if (inum < 0) return inum;
 
-    fp = fopen("test1.img", "r");
-    if (fp == NULL) {
-        fprintf(stderr, "failed.");
-        return -1;
-    }
-
     struct fs_inode current_inode;
-
-    fseek(fp, inum * 4096, SEEK_SET);
-    fread(&current_inode, sizeof(struct  fs_inode), 1, fp);
-
-
-    if ((FS_BLOCK_SIZE/4 - 5) * 4096 <= offset) return 0;
-    if (offset + len > (FS_BLOCK_SIZE/4 - 5) * 4096) {
-        len = (FS_BLOCK_SIZE/4 - 5) * 4096 - offset;
+    char buffer[4096];
+    block_read(&current_inode, inum, 1);
+    if (current_inode.size <= offset) return 0;
+    if (offset + len > current_inode.size) {
+        len = current_inode.size - offset;
     }
-    size_t count_byte = 0;
 
-    long idx_block = offset / 4096;
-    long idx_offset = offset % 4096;
-
+    int count_byte = 0;
+    long idx_block = 0;
     while (len > 0) {
-        fseek(fp, current_inode.ptrs[idx_block++] * 4096 + idx_offset, SEEK_SET);
-        size_t read_bytes = idx_offset + len > 4096? 4096 - idx_offset : len;
-        fread(&buf[count_byte + offset], read_bytes, 1, fp);
-        count_byte += read_bytes;
-        idx_offset = 0;
-        len -= read_bytes;
+        block_read(buffer, current_inode.ptrs[idx_block++], 1);
+
+        for (int i = 0; i < 4096; i++) {
+            if (len == 0) break;
+            offset--;
+            if (offset >= 0) continue;
+            buf[count_byte] = buffer[i];
+            count_byte++;
+            len--;
+            if (len == 0) return count_byte;
+        }
     }
 
-    return (int)count_byte;
+    return count_byte;
 }
 
 /* write - write data to a file
@@ -705,60 +693,36 @@ int fs_write(const char *path, const char *buf, size_t len,
     *pathv = NULL;
     parse(path, pathv);
     int inum = translate(pathc, pathv);
-
-    printf("inode is %d\n", inum);
-
     if (inum < 0) return inum;
-
-
-
     struct fs_inode current_inode;
-
     block_read(&current_inode, inum, 1);
-//    fseek(fp, inum * 4096, SEEK_SET);
-//    fread(&current_inode, sizeof(struct  fs_inode), 1, fp);
 
     if (current_inode.mode & 040000) return -EISDIR;
-    printf("inode is %d\n", inum);
-    if ((FS_BLOCK_SIZE/4 - 5) * 4096 < offset) return -EINVAL;
+    if (current_inode.size < offset) return -EINVAL;
 
-    if (offset + len > (FS_BLOCK_SIZE/4 - 5) * 4096) {
-        len = (FS_BLOCK_SIZE/4 - 5) * 4096 - offset;
+    if (offset + len > current_inode.size) {
+        len = current_inode.size - offset;
     }
     size_t count_byte = 0;
 
     long idx_block = offset / 4096;
     long idx_offset = offset % 4096;
-    //  printf("%d \n", idx_offset);
-    //   printf("%d \n", idx_block);
+    char buffer[4096];
 
-    printf("inode is %d\n", inum);
-
-    printf("%d\n", current_inode.ptrs[idx_block]);
-    int idx = 0;
-    //printf("%s\n", buf);
- //   int c = block_write(buf, current_inode.ptrs[idx_block++], 1);
-//    printf("c is %d\n", c);
-//    char *bf = malloc(4096);
-//    block_read(bf, 4,1);
-//    printf("bf  %s is \n", bf);
-    printf("addresss is %p ,, %p", &buf, &buf[0]);
     while (len > 0) {
+        block_read(buffer, current_inode.ptrs[idx_block], 1);
 
-     //   fseek(fp, current_inode.ptrs[idx_block++] * 4096 + offset, SEEK_SET);
-        size_t read_bytes = idx_offset + len > 4096? 4096 - offset : len;
-
-        count_byte += read_bytes;
-
-        //printf("%d\n", read_bytes);
-        block_write(&buf[idx], current_inode.ptrs[idx_block++], 1);
-//        fwrite(&buf[idx], read_bytes, 1, fp);
-        idx += read_bytes;
-
+        for (int i = 0; i < 4096; i++) {
+            if (idx_offset > 0) {
+                idx_offset--;
+            } else {
+                buffer[i] = buf[count_byte++];
+            }
+        }
+        block_write(buffer, current_inode.ptrs[idx_block++], 1);
         idx_offset = 0;
-        len -= read_bytes;
+        len -= count_byte;
     }
-    printf("%d---\n", count_byte);
     return count_byte;
 }
 
@@ -780,7 +744,7 @@ int fs_statfs(const char *path, struct statvfs *st)
      */
     /* your code here */
 
-    fp = NULL;
+    FILE *fp = NULL;
     fp = fopen("test.img", "r");
 //    if (fp == NULL) {
 //        fprintf(stderr, "failed.");
